@@ -1,28 +1,19 @@
-`timescale 1ns / 1ps
 module pixel_bram (
-    input wire clk,
-    
-    // Write Port (Fed by the SPI Slave)
-    input wire we,                       // Write Enable (connected to spi_slave rx_valid)
-    input wire [9:0] write_addr,         // Memory index to write to (0 to 783)
-    input wire signed [7:0] write_data,  // 8-bit pixel from ESP32
-    
-    // Read Port (Read by the Compute Engine)
-    input wire [9:0] read_addr,          // Memory index requested by controller
-    output reg signed [7:0] read_data    // 8-bit pixel sent to PEs
+    input  logic clk,
+    input  logic we,
+    input  logic signed [7:0] wdata,
+    input  logic [9:0] raddr,
+    output logic signed [7:0] rdata
 );
+    logic signed [7:0] ram [0:783];
+    logic [9:0] waddr_reg = 0;
 
-    // 784 bytes to hold exactly one 28x28 flattened MNIST image
-    reg signed [7:0] ram [0:783];
-
-    always @(posedge clk) begin
-        // Write logic
+    always_ff @(posedge clk) begin
         if (we) begin
-            ram[write_addr] <= write_data;
+            ram[waddr_reg] <= wdata;
+            if (waddr_reg < 783) waddr_reg <= waddr_reg + 1;
+            else waddr_reg <= 0;
         end
-        
-        // Synchronous read logic (Required for FPGA Block RAM inference)
-        read_data <= ram[read_addr];
+        rdata <= ram[raddr];
     end
-
 endmodule

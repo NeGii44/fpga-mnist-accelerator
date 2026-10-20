@@ -1,64 +1,58 @@
-`timescale 1ns / 1ps
 module spi_slave (
-    input wire sys_clk,      
-    input wire rst_n,        
-    
-    // SPI Pins
-    input wire spi_cs,       
-    input wire spi_clk,      
-    input wire spi_mosi,     
-    
-    // Output Interface
-    output reg [7:0] rx_data,  
-    output reg rx_valid        
+    input  logic clk,
+    input  logic rst_n,
+    input  logic spi_sck,
+    input  logic spi_cs,
+    input  logic spi_mosi,
+    output logic rx_valid,
+    output logic [7:0] rx_data,
+    output logic prediction_start
 );
 
-    // Clock Domain Crossing Synchronizers
-    reg [2:0] spi_clk_sync;
-    reg [2:0] spi_cs_sync;
-    reg [1:0] spi_mosi_sync;
+    // 1. Clock Synchronizer
+    logic [2:0] sck_sync;
+    always_ff @(posedge clk) sck_sync <= {sck_sync[1:0], spi_sck};
+    wire sck_rise = (sck_sync[2:1] == 2'b01);
 
-    always @(posedge sys_clk or negedge rst_n) begin
+    // 2. Chip Select (CS) Synchronizer to filter wire noise
+    logic [1:0] cs_sync;
+    always_ff @(posedge clk) cs_sync <= {cs_sync[0], spi_cs};
+    wire cs_active = ~cs_sync[1]; 
+
+    logic [7:0] shift_reg;
+    logic [2:0] bit_cnt;
+    logic [9:0] byte_cnt;
+
+    always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            spi_clk_sync  <= 3'b000;
-            spi_cs_sync   <= 3'b111;
-            spi_mosi_sync <= 2'b00;
-        end else begin
-            spi_clk_sync  <= {spi_clk_sync[1:0], spi_clk};
-            spi_cs_sync   <= {spi_cs_sync[1:0], spi_cs};
-            spi_mosi_sync <= {spi_mosi_sync[0], spi_mosi};
-        end
-    end
-
-    wire spi_clk_rising = (spi_clk_sync[2:1] == 2'b01);
-    wire cs_active = ~spi_cs_sync[1];
-
-    reg [2:0] bit_counter;
-    reg [7:0] shift_reg;
-
-    always @(posedge sys_clk or negedge rst_n) begin
-        if (!rst_n) begin
-            bit_counter <= 3'd0;
-            shift_reg   <= 8'd0;
-            rx_data     <= 8'd0;
-            rx_valid    <= 1'b0;
-        end else begin
-            rx_valid <= 1'b0; 
-
-            if (cs_active) begin
-                if (spi_clk_rising) begin
-                    shift_reg <= {shift_reg[6:0], spi_mosi_sync[1]};
-                    bit_counter <= bit_counter + 1'b1;
-
-                    if (bit_counter == 3'd7) begin
-                        rx_data  <= {shift_reg[6:0], spi_mosi_sync[1]};
-                        rx_valid <= 1'b1;
+            bit_cnt <= 0;
+            byte_cnt <= 0;
+            rx_valid <= 0;
+            prediction_start <= 0;
+        end else if (cs_active) begin 
+            rx_valid <= 0;
+            prediction_start <= 0; // RESTORED: Clears instantly to create a clean 1-cycle pulse
+            
+            if (sck_rise) begin
+                shift_reg <= {shift_reg[6:0], spi_mosi};
+                bit_cnt <= bit_cnt + 1;
+                if (bit_cnt == 3'd7) begin
+                    rx_valid <= 1;
+                    rx_data <= {shift_reg[6:0], spi_mosi};
+                    byte_cnt <= byte_cnt + 1;
+                    
+                    if (byte_cnt == 10'd783) begin
+                        prediction_start <= 1; // Fires for exactly one 27MHz clock cycle
+                        byte_cnt <= 0;
                     end
                 end
-            end else begin
-                bit_counter <= 3'd0;
             end
+        end else begin
+            // ESP32 is idle (CS is HIGH). Clear counters safely.
+            rx_valid <= 0;
+            prediction_start <= 0; 
+            bit_cnt <= 0;  
+            byte_cnt <= 0; 
         end
     end
-
 endmodule

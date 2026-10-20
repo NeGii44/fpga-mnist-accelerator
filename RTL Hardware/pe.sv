@@ -1,22 +1,15 @@
-`timescale 1ns / 1ps
 module pe (
-    input wire clk,
-    input wire rst_n,
-    input wire clr,
-    input wire en,                      // NEW: Freeze accumulator if 0
-    input wire signed [7:0] activation, 
-    input wire signed [7:0] weight,     
-    output reg signed [31:0] psum       
+    input  logic clk, rst_n, mac_enable, mac_clear,
+    input  logic signed [7:0]  pixel_in,
+    input  logic signed [7:0]  weight_in,
+    output logic signed [31:0] acc_out
 );
+    logic signed [15:0] product;
+    assign product = pixel_in * weight_in;
 
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            psum <= 32'd0;
-        end else if (clr) begin
-            psum <= 32'd0;
-        end else if (en) begin
-            psum <= psum + (activation * weight);
-        end
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)          acc_out <= 32'sd0;
+        else if (mac_clear)  acc_out <= 32'sd0;
+        else if (mac_enable) acc_out <= acc_out + product;
     end
-
 endmodule
