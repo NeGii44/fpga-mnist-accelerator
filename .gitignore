@@ -1,14 +1,7 @@
-# Hardware Simulation Files
-*.out
+esp32/build/
+esp32/sdkconfig
+esp32/sdkconfig.old
 *.vcd
-*.vvp
-
-# ESP-IDF Build Files
-build/
-sdkconfig
-dependencies.lock
-
-# Python Caches
+tb_sim
+host/data/
 __pycache__/
-*.pyc
-
